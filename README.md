@@ -6,7 +6,7 @@
 [![OpenAI](https://img.shields.io/badge/OpenAI-GPT4-412991.svg)](https://openai.com)
 [![HIPAA](https://img.shields.io/badge/HIPAA-Compliant-red.svg)](https://hhs.gov)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
+[![HuggingFace Space](https://img.shields.io/badge/🤗%20HuggingFace-Live%20Demo-yellow)](https://huggingface.co/spaces/mattderya/pharma-rag-llm-agent)
 ---
 
 ## 🎯 Project Overview
