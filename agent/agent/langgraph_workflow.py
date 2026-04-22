@@ -4,11 +4,14 @@
 # ============================================================
 
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, AIMessage
+from langchain_anthropic import ChatAnthropic
+from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, AIMessage
 from typing import TypedDict, List, Annotated
 import operator
 import os
+
+load_dotenv()
 
 # ============================================================
 # STATE DEFINITION
@@ -27,10 +30,10 @@ class AgentState(TypedDict):
 # NODES
 # ============================================================
 
-llm = ChatOpenAI(
-    model="gpt-4",
+llm = ChatAnthropic(
+    model="claude-sonnet-4-5",
     temperature=0,
-    api_key=os.getenv("OPENAI_API_KEY")
+    api_key=os.getenv("ANTHROPIC_API_KEY")
 )
 
 def classify_query(state: AgentState) -> AgentState:
@@ -48,8 +51,7 @@ def classify_query(state: AgentState) -> AgentState:
     
     return {
         **state,
-        "requires_disclaimer": requires_disclaimer,
-        "iteration": state.get("iteration", 0) + 1
+        "requires_disclaimer": requires_disclaimer
     }
 
 def retrieve_context(state: AgentState) -> AgentState:
@@ -106,10 +108,17 @@ def generate_response(state: AgentState) -> AgentState:
     
     return {**state, "response": answer}
 
+def increment_iteration(state: AgentState) -> AgentState:
+    """Increment the retry iteration counter."""
+    current = state.get("iteration", 0)
+    new_iteration = current + 1
+    print(f"🔄 Retry iteration: {new_iteration}")
+    return {**state, "iteration": new_iteration}
+
 def should_retry(state: AgentState) -> str:
     """Decide whether to retry or end the workflow."""
     if not state.get("response") and state.get("iteration", 0) < 3:
-        return "retrieve"
+        return "retry"
     return END
 
 # ============================================================
@@ -126,6 +135,8 @@ def build_pharma_workflow():
     workflow.add_node("retrieve", retrieve_context)
     workflow.add_node("generate", generate_response)
     
+    workflow.add_node("increment_iteration", increment_iteration)
+
     # Add edges
     workflow.set_entry_point("classify")
     workflow.add_edge("classify", "retrieve")
@@ -133,9 +144,11 @@ def build_pharma_workflow():
     workflow.add_conditional_edges(
         "generate",
         should_retry,
-        {END: END, "retrieve": "retrieve"}
+        {END: END, "retry": "increment_iteration"}
     )
     
+    workflow.add_edge("increment_iteration", "retrieve")
+
     return workflow.compile()
 
 
