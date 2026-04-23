@@ -209,3 +209,7 @@ __marimo__/
 pharma_agent.db
 pharma_agent.db-shm
 pharma_agent.db-wal
+
+multi_agent.db
+multi_agent.db-shm
+multi_agent.db-wal
