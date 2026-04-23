@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+pharma_agent.db
+pharma_agent.db-shm
+pharma_agent.db-wal
