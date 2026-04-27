@@ -12,10 +12,15 @@ import operator
 import os
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
-from langchain_mcp_adapters.client import MultiServerMCPClient
 import asyncio
 
+# MCP imports (updated for clean subprocess lifecycle)
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from langchain_mcp_adapters.tools import load_mcp_tools
+
 load_dotenv()
+
 
 # ============================================================
 # STATE DEFINITION
@@ -108,42 +113,47 @@ def _extract_drug_name(query: str) -> str:
 
 
 async def _call_mcp_async(query: str) -> str:
-    """Async helper: connect to MCP server and invoke the relevant tool."""
-    client = MultiServerMCPClient({
-        "pharma": {
-            "command": "python",
-            "args": ["pharma_mcp_server.py"],
-            "transport": "stdio",
-        }
-    })
-    tools = await client.get_tools()
-    tool_map = {t.name: t for t in tools}
+    """
+    Async helper: connect to MCP server and invoke the relevant tool.
+    Uses explicit async context managers to guarantee subprocess cleanup
+    after each query (prevents leak/freeze across multiple runs).
+    """
+    server_params = StdioServerParameters(
+        command="python",
+        args=["pharma_mcp_server.py"],
+    )
     
-    q = query.lower()
-    
-    if "interaction" in q:
-        tool = tool_map.get("drug_interaction_check")
-        drug = _extract_drug_name(q) or "warfarin"
-        raw = await tool.ainvoke({"drug_name": drug})
-        return _extract_text(raw)
-    elif "adverse" in q or "side effect" in q:
-        tool = tool_map.get("adverse_event_lookup")
-        drug = _extract_drug_name(q) or "warfarin"
-        raw = await tool.ainvoke({"drug_name": drug})
-        return _extract_text(raw)
-    elif "trial" in q or "phase" in q:
-        tool = tool_map.get("clinical_trial_search")
-        phase = "II" if "phase ii" in q or "phase 2" in q else ""
-        indication = "NSCLC" if "nsclc" in q or "oncology" in q else ""
-        raw = await tool.ainvoke({"phase": phase, "indication": indication})
-        return _extract_text(raw)
-    elif "adme" in q or "pharmacokinetic" in q or "metabolism" in q:
-        tool = tool_map.get("pharmacokinetics_lookup")
-        drug = _extract_drug_name(q) or "mrd-112"
-        raw = await tool.ainvoke({"drug_name": drug})
-        return _extract_text(raw)
-    
-    return ""
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await load_mcp_tools(session)
+            tool_map = {t.name: t for t in tools}
+            
+            q = query.lower()
+            
+            if "interaction" in q:
+                tool = tool_map.get("drug_interaction_check")
+                drug = _extract_drug_name(q) or "warfarin"
+                raw = await tool.ainvoke({"drug_name": drug})
+                return _extract_text(raw)
+            elif "adverse" in q or "side effect" in q:
+                tool = tool_map.get("adverse_event_lookup")
+                drug = _extract_drug_name(q) or "warfarin"
+                raw = await tool.ainvoke({"drug_name": drug})
+                return _extract_text(raw)
+            elif "trial" in q or "phase" in q:
+                tool = tool_map.get("clinical_trial_search")
+                phase = "II" if "phase ii" in q or "phase 2" in q else ""
+                indication = "NSCLC" if "nsclc" in q or "oncology" in q else ""
+                raw = await tool.ainvoke({"phase": phase, "indication": indication})
+                return _extract_text(raw)
+            elif "adme" in q or "pharmacokinetic" in q or "metabolism" in q:
+                tool = tool_map.get("pharmacokinetics_lookup")
+                drug = _extract_drug_name(q) or "mrd-112"
+                raw = await tool.ainvoke({"drug_name": drug})
+                return _extract_text(raw)
+            
+            return ""
 
 
 def call_mcp_tools(state: AgentState) -> AgentState:
